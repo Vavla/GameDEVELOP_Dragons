@@ -82,8 +82,8 @@ export const MENU_DRAGON_MAX_HEIGHT = 200;
 /** Ширина переноса подсказки внизу игрового экрана (чтобы не задевала HUD). */
 export const HINT_WRAP_WIDTH = 600;
 
-/** Длительность первой фазы раунда (секунды). */
-export const PHASE_1_DURATION = 15;
+/** Количество монет, после накопления которых начинается вторая фаза. */
+export const PHASE_2_COINS = 10;
 
 /** Множитель скорости и количества препятствий во второй фазе. */
 export const PHASE_2_MULTIPLIER = 1.5;

@@ -26,7 +26,7 @@ import {
   OBSTACLE_MIN_X,
   OBSTACLE_MAX_X,
   HINT_WRAP_WIDTH,
-  PHASE_1_DURATION,
+  PHASE_2_COINS,
   PHASE_2_MULTIPLIER,
   MAX_OBSTACLES_PER_ROW,
 } from './constants';
@@ -267,8 +267,8 @@ export class GameScene extends Phaser.Scene {
 
     this.elapsed += seconds;
 
-    // Фаза 2 начинается после PHASE_1_DURATION секунд раунда.
-    const nextPhase = this.elapsed < PHASE_1_DURATION ? 1 : 2;
+    // Фаза 2 начинается после накопления PHASE_2_COINS монет.
+    const nextPhase = this.coins < PHASE_2_COINS ? 1 : 2;
     if (nextPhase !== this.phase) {
       this.phase = nextPhase;
       this.onPhaseChange();
