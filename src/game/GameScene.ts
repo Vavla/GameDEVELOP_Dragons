@@ -61,6 +61,8 @@ export class GameScene extends Phaser.Scene {
   private coins = 0;
   private elapsed = 0;
   private isPlaying = true;
+  private isPaused = false;
+  private pauseOverlay!: Phaser.GameObjects.Container;
 
   constructor() {
     super('GameScene');
@@ -165,6 +167,28 @@ export class GameScene extends Phaser.Scene {
       this.scene.start('MenuScene');
     });
 
+    // Оверлей паузы: затемнение, заголовок и подсказка.
+    const dim = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.5);
+    const pauseTitle = this.add
+      .text(width / 2, height / 2 - 20, 'Пауза', {
+        fontFamily: 'Georgia, serif',
+        fontSize: '48px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    const pauseHint = this.add
+      .text(width / 2, height / 2 + 40, 'P — продолжить', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '20px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    this.pauseOverlay = this.add
+      .container(0, 0, [dim, pauseTitle, pauseHint])
+      .setDepth(10)
+      .setVisible(false);
+
     if (!this.input.keyboard) {
       throw new Error('Keyboard input is unavailable.');
     }
@@ -179,10 +203,27 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    this.input.keyboard.on('keydown-P', () => this.togglePause());
+    this.input.keyboard.on('keydown-ESC', () => this.togglePause());
+
     this.startLevel(true);
   }
 
+  private togglePause(): void {
+    if (!this.isPlaying) return;
+
+    this.isPaused = !this.isPaused;
+    if (this.isPaused) {
+      this.physics.world.pause();
+      this.pauseOverlay.setVisible(true);
+    } else {
+      this.physics.world.resume();
+      this.pauseOverlay.setVisible(false);
+    }
+  }
+
   update(_time: number, delta: number): void {
+    if (this.isPaused) return;
     if (!this.isPlaying) return;
 
     const seconds = delta / 1000;
@@ -307,7 +348,9 @@ export class GameScene extends Phaser.Scene {
       this.lives = START_LIVES;
     }
     this.isPlaying = true;
+    this.isPaused = false;
     this.elapsed = 0;
+    this.pauseOverlay.setVisible(false);
     this.shieldImage.setVisible(false);
     this.messageText.setVisible(false);
     this.hintText.setVisible(false);
