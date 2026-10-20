@@ -50,7 +50,7 @@ export const ROWS = 10;
 export const SCROLL_SPEED = 250;
 
 /** Длительность раунда в секундах. */
-export const ROUND_DURATION = 20;
+export const ROUND_DURATION = 30;
 
 /** Стартовая позиция дракона по X. */
 export const START_X = 480;
@@ -81,3 +81,12 @@ export const MENU_DRAGON_MAX_HEIGHT = 200;
 
 /** Ширина переноса подсказки внизу игрового экрана (чтобы не задевала HUD). */
 export const HINT_WRAP_WIDTH = 600;
+
+/** Длительность первой фазы раунда (секунды). */
+export const PHASE_1_DURATION = 15;
+
+/** Множитель скорости и количества препятствий во второй фазе. */
+export const PHASE_2_MULTIPLIER = 1.5;
+
+/** Максимальное количество препятствий в одном ряду. */
+export const MAX_OBSTACLES_PER_ROW = 3;

@@ -26,6 +26,9 @@ import {
   OBSTACLE_MIN_X,
   OBSTACLE_MAX_X,
   HINT_WRAP_WIDTH,
+  PHASE_1_DURATION,
+  PHASE_2_MULTIPLIER,
+  MAX_OBSTACLES_PER_ROW,
 } from './constants';
 
 type ObstacleType = 'cloud' | 'whirlwind';
@@ -63,6 +66,9 @@ export class GameScene extends Phaser.Scene {
   private isPlaying = true;
   private isPaused = false;
   private pauseOverlay!: Phaser.GameObjects.Container;
+  private phase = 1;
+  private currentScrollSpeed = SCROLL_SPEED;
+  private phaseText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('GameScene');
@@ -123,6 +129,13 @@ export class GameScene extends Phaser.Scene {
     });
     this.timerText = this.add
       .text(width - 24, height - 44, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '20px',
+        color: '#93c5fd',
+      })
+      .setOrigin(1, 0);
+    this.phaseText = this.add
+      .text(width - 24, height - 72, 'Фаза 1', {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '20px',
         color: '#93c5fd',
@@ -253,7 +266,15 @@ export class GameScene extends Phaser.Scene {
     this.checkObstacleCollision();
 
     this.elapsed += seconds;
-    // this.timerText.setText(`До финиша: ${Math.max(0, ROUND_DURATION - Math.floor(this.elapsed))}`);
+
+    // Фаза 2 начинается после PHASE_1_DURATION секунд раунда.
+    const nextPhase = this.elapsed < PHASE_1_DURATION ? 1 : 2;
+    if (nextPhase !== this.phase) {
+      this.phase = nextPhase;
+      this.onPhaseChange();
+    }
+    this.timerText.setText(`До финиша: ${Math.max(0, ROUND_DURATION - Math.floor(this.elapsed))}`);
+    this.phaseText.setText(`Фаза ${this.phase}`);
 
     if (this.elapsed >= ROUND_DURATION && !this.finishBand.visible) {
       this.finishBand.setVisible(true);
@@ -296,7 +317,7 @@ export class GameScene extends Phaser.Scene {
   private scrollBackground(seconds: number): void {
     this.background.getChildren().forEach((child) => {
       const dot = child as Phaser.GameObjects.Arc;
-      dot.y += SCROLL_SPEED * 0.4 * seconds;
+      dot.y += this.currentScrollSpeed * 0.4 * seconds;
       if (dot.y > this.scale.height + 20) {
         dot.y = -20;
         dot.x = Phaser.Math.Between(0, this.scale.width);
@@ -350,6 +371,8 @@ export class GameScene extends Phaser.Scene {
     this.isPlaying = true;
     this.isPaused = false;
     this.elapsed = 0;
+    this.phase = 1;
+    this.currentScrollSpeed = SCROLL_SPEED;
     this.pauseOverlay.setVisible(false);
     this.shieldImage.setVisible(false);
     this.messageText.setVisible(false);
@@ -367,6 +390,8 @@ export class GameScene extends Phaser.Scene {
     this.levelText.setText(`Уровень: ${this.level}`);
     this.livesText.setText(`Жизни: ${this.lives}`);
     this.coinsText.setText(`Монеты: ${this.coins}`);
+    this.phaseText.setText('Фаза 1');
+    this.timerText.setText('');
   }
 
   private generateLevel(): void {
@@ -380,7 +405,10 @@ export class GameScene extends Phaser.Scene {
     while (remaining > 0) {
       const candidates: number[] = [];
       for (let r = 0; r < ROWS; r++) {
-        if ((rowCounts[r] + 1) * OBSTACLE_DIAMETER <= MAX_ROW_OCCUPANCY * width) {
+        if (
+          rowCounts[r] < MAX_OBSTACLES_PER_ROW &&
+          (rowCounts[r] + 1) * OBSTACLE_DIAMETER <= MAX_ROW_OCCUPANCY * width
+        ) {
           candidates.push(r);
         }
       }
@@ -392,20 +420,52 @@ export class GameScene extends Phaser.Scene {
     const rowSpacing = (SCROLL_SPEED * ROUND_DURATION) / ROWS;
     for (let r = 0; r < ROWS; r++) {
       const y = -rowSpacing * (r + 1) - OBSTACLE_SIZE * 2;
-      const positions: number[] = [];
-      let attempts = 0;
-      while (positions.length < rowCounts[r] && attempts < 300) {
-        attempts += 1;
-        const x = Phaser.Math.Between(OBSTACLE_MIN_X, OBSTACLE_MAX_X);
-        if (positions.every((p) => Math.abs(p - x) >= OBSTACLE_DIAMETER)) {
-          positions.push(x);
-        }
-      }
-      for (const x of positions) {
+      for (const x of this.randomRowPositions(rowCounts[r])) {
         const type = OBSTACLE_TYPES[Phaser.Math.Between(0, OBSTACLE_TYPES.length - 1)];
         const obstacle = this.obstacles.create(x, y, type) as Phaser.Physics.Arcade.Image;
         (obstacle.body as Phaser.Physics.Arcade.Body).setCircle(OBSTACLE_SIZE);
         obstacle.setVelocityY(SCROLL_SPEED);
+      }
+    }
+  }
+
+  /** Случайные X для ряда препятствий: без наложений, не более MAX_OBSTACLES_PER_ROW. */
+  private randomRowPositions(count: number): number[] {
+    const positions: number[] = [];
+    let attempts = 0;
+    while (positions.length < count && attempts < 300) {
+      attempts += 1;
+      const x = Phaser.Math.Between(OBSTACLE_MIN_X, OBSTACLE_MAX_X);
+      if (positions.every((p) => Math.abs(p - x) >= OBSTACLE_DIAMETER)) {
+        positions.push(x);
+      }
+    }
+    return positions;
+  }
+
+  private onPhaseChange(): void {
+    if (this.phase !== 2) return;
+
+    this.currentScrollSpeed = SCROLL_SPEED * PHASE_2_MULTIPLIER;
+
+    // Ускоряем уже летящие препятствия.
+    this.obstacles.getChildren().forEach((child) => {
+      (child as Phaser.Physics.Arcade.Image).setVelocityY(this.currentScrollSpeed);
+    });
+
+    // Добавляем 0.5 × базового количества препятствий (итого ×1.5).
+    // Рядами по максимум MAX_OBSTACLES_PER_ROW, без наложений по X.
+    const count = BASE_OBSTACLES + (this.level - 1);
+    const extra = Math.round(count * (PHASE_2_MULTIPLIER - 1));
+    const rowSpacing = (SCROLL_SPEED * ROUND_DURATION) / ROWS;
+    for (let i = 0; i < extra; i += MAX_OBSTACLES_PER_ROW) {
+      const rowCount = Math.min(MAX_OBSTACLES_PER_ROW, extra - i);
+      const y = -OBSTACLE_SIZE * 2 - (i / MAX_OBSTACLES_PER_ROW) * rowSpacing;
+      for (const x of this.randomRowPositions(rowCount)) {
+        const type = OBSTACLE_TYPES[Phaser.Math.Between(0, OBSTACLE_TYPES.length - 1)];
+        const obstacle = this.obstacles.create(x, y, type) as Phaser.Physics.Arcade.Image;
+        (obstacle.body as Phaser.Physics.Arcade.Body).setCircle(OBSTACLE_SIZE);
+        obstacle.setVelocityY(this.currentScrollSpeed);
       }
     }
   }
