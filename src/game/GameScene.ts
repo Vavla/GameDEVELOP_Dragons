@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import dragonUrl from './pictures/dracon.png';
+import dragonUrl from './pictures/dracon_new.png';
 import shieldUrl from './pictures/shield.png';
+import backgroundUrl from './pictures/background.png';
 import {
   PLAYER_SPEED,
   PLAYER_SCALE,
@@ -25,6 +26,21 @@ import {
   FINISH_Y,
   OBSTACLE_MIN_X,
   OBSTACLE_MAX_X,
+  MIN_ROW_FREE_WIDTH,
+  MAX_PLACEMENT_ATTEMPTS,
+  BACKGROUND_SCROLL_FACTOR,
+  BACKGROUND_TILES,
+  BG_SWAY_AMPLITUDE,
+  BG_SWAY_SPEED,
+  BACKGROUND_DIM_ALPHA,
+  CLOUD_COUNT,
+  CLOUD_SCROLL_FACTOR,
+  CLOUD_MIN_ALPHA,
+  CLOUD_MAX_ALPHA,
+  CLOUD_MIN_SCALE,
+  CLOUD_MAX_SCALE,
+  CLOUD_SWAY_AMPLITUDE,
+  CLOUD_SWAY_SPEED,
   HINT_WRAP_WIDTH,
   PHASE_2_COINS,
   PHASE_2_MULTIPLIER,
@@ -47,7 +63,8 @@ const OBSTACLE_TYPES: ObstacleType[] = ['cloud', 'whirlwind'];
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Image;
   private obstacles!: Phaser.Physics.Arcade.Group;
-  private background!: Phaser.GameObjects.Group;
+  private backgroundTiles: Phaser.GameObjects.Image[] = [];
+  private clouds: Phaser.GameObjects.Image[] = [];
   private finishBand!: Phaser.GameObjects.Rectangle;
   private shieldImage!: Phaser.GameObjects.Image;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -77,6 +94,7 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     this.load.image('dragon', dragonUrl);
     this.load.image('shield', shieldUrl);
+    this.load.image('background', backgroundUrl);
   }
 
   create(): void {
@@ -85,6 +103,20 @@ export class GameScene extends Phaser.Scene {
 
     this.createObstacleTextures();
     this.createBackground();
+    // Затемняющий слой между фоном и игровыми объектами — приглушает яркость моря.
+    this.add
+      .rectangle(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        this.scale.width,
+        this.scale.height,
+        0x000000,
+        BACKGROUND_DIM_ALPHA,
+      )
+      .setDepth(0);
+
+    this.createCloudTexture();
+    this.createClouds();
 
     // Столкновение считается по «кресту»: центральная вертикаль + горизонтальная полоса.
     this.player = this.add.image(START_X, START_Y, 'dragon').setScale(PLAYER_SCALE);
@@ -256,6 +288,7 @@ export class GameScene extends Phaser.Scene {
     this.keepPlayerOnScreen();
 
     this.scrollBackground(seconds);
+    this.updateClouds(seconds);
 
     this.obstacles.getChildren().forEach((child) => {
       const obstacle = child as Phaser.Physics.Arcade.Image;
@@ -314,13 +347,85 @@ export class GameScene extends Phaser.Scene {
     this.player.y = Phaser.Math.Clamp(this.player.y, PLAYER_RADIUS, this.scale.height - half);
   }
 
+  /** Облака плывут вниз медленнее фона (параллакс) и мягко покачиваются. */
+  private updateClouds(seconds: number): void {
+    this.clouds.forEach((cloud, index) => {
+      cloud.y += SCROLL_SPEED * CLOUD_SCROLL_FACTOR * seconds;
+      cloud.x +=
+        Math.sin(this.elapsed * CLOUD_SWAY_SPEED + index * 1.7) * CLOUD_SWAY_AMPLITUDE * seconds;
+      if (cloud.y - cloud.displayHeight / 2 > this.scale.height) {
+        cloud.y = -cloud.displayHeight / 2;
+        cloud.x = Phaser.Math.Between(0, this.scale.width);
+      }
+    });
+  }
+
+  /** Мягкая «перьевая» текстура облака: набор полупрозрачных размытых пятен. */
+  private createCloudTexture(): void {
+    const width = 256;
+    const height = 128;
+    if (this.textures.exists('cloud-wisp')) {
+      this.textures.remove('cloud-wisp');
+    }
+    const texture = this.textures.createCanvas('cloud-wisp', width, height);
+    if (!texture) {
+      throw new Error('Canvas texture is unavailable.');
+    }
+    const context = texture.getContext();
+    for (let i = 0; i < 16; i++) {
+      const cx = Phaser.Math.Between(40, width - 40);
+      const cy = Phaser.Math.Between(45, height - 45);
+      const radius = Phaser.Math.Between(30, 80);
+      const squish = Phaser.Math.FloatBetween(0.12, 0.3);
+      const alpha = Phaser.Math.FloatBetween(0.05, 0.18);
+      const gradient = context.createRadialGradient(0, 0, 0, 0, 0, radius);
+      gradient.addColorStop(0, `rgba(255,255,255,${alpha.toFixed(3)})`);
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      context.save();
+      context.translate(cx, cy);
+      context.scale(1, squish);
+      context.fillStyle = gradient;
+      context.beginPath();
+      context.arc(0, 0, radius, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
+    texture.refresh();
+  }
+
+  /** Лёгкие перистые облака над фоном. */
+  private createClouds(): void {
+    this.clouds = [];
+    for (let i = 0; i < CLOUD_COUNT; i++) {
+      this.clouds.push(
+        this.add
+          .image(
+            Phaser.Math.Between(0, this.scale.width),
+            Phaser.Math.Between(0, this.scale.height),
+            'cloud-wisp',
+          )
+          .setScale(Phaser.Math.FloatBetween(CLOUD_MIN_SCALE, CLOUD_MAX_SCALE))
+          .setAlpha(Phaser.Math.FloatBetween(CLOUD_MIN_ALPHA, CLOUD_MAX_ALPHA))
+          .setDepth(0),
+      );
+    }
+  }
+
+  /** Фон плывёт вниз с постоянной скоростью (не зависит от фазы) и слегка покачивается. */
   private scrollBackground(seconds: number): void {
-    this.background.getChildren().forEach((child) => {
-      const dot = child as Phaser.GameObjects.Arc;
-      dot.y += this.currentScrollSpeed * 0.4 * seconds;
-      if (dot.y > this.scale.height + 20) {
-        dot.y = -20;
-        dot.x = Phaser.Math.Between(0, this.scale.width);
+    const swayX = this.scale.width / 2 + Math.sin(this.elapsed * BG_SWAY_SPEED) * BG_SWAY_AMPLITUDE;
+    this.backgroundTiles.forEach((tile) => {
+      tile.y += SCROLL_SPEED * BACKGROUND_SCROLL_FACTOR * seconds;
+      tile.x = swayX;
+      if (tile.y - tile.displayHeight / 2 > this.scale.height) {
+        tile.y -= tile.displayHeight * BACKGROUND_TILES;
+        // При переносе наверх плитка становится соседкой другой плитки, поэтому
+        // ориентация берётся противоположной ЕЁ текущей ориентации — тогда низ
+        // новой верхней плитки зеркально продолжит верх нижней.
+        const other = this.backgroundTiles.find((t) => t !== tile);
+        if (other) {
+          tile.setFlipY(!other.flipY);
+        }
       }
     });
   }
@@ -429,18 +534,107 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Случайные X для ряда препятствий: без наложений, не более MAX_OBSTACLES_PER_ROW. */
+  /**
+   * Случайные X для ряда препятствий: без наложений (пересечения устраняются
+   * смещением) и с гарантированным проходом шириной с дракона.
+   */
   private randomRowPositions(count: number): number[] {
     const positions: number[] = [];
     let attempts = 0;
-    while (positions.length < count && attempts < 300) {
+    while (positions.length < count && attempts < MAX_PLACEMENT_ATTEMPTS) {
       attempts += 1;
-      const x = Phaser.Math.Between(OBSTACLE_MIN_X, OBSTACLE_MAX_X);
-      if (positions.every((p) => Math.abs(p - x) >= OBSTACLE_DIAMETER)) {
+      const x = this.resolveOverlap(
+        Phaser.Math.Between(OBSTACLE_MIN_X, OBSTACLE_MAX_X),
+        positions,
+      );
+      if (x !== null) {
         positions.push(x);
       }
     }
+    this.ensureFreeGap(positions);
+    if (positions.length < count) {
+      console.warn(`randomRowPositions: размещено ${positions.length} из ${count} препятствий ряда.`);
+    }
     return positions;
+  }
+
+  /**
+   * Смещает X, устраняя пересечения с уже размещёнными препятствиями ряда.
+   * Возвращает null, если смещением в пределах ряда пересечения устранить нельзя.
+   */
+  private resolveOverlap(x: number, positions: number[]): number | null {
+    if (!positions.some((p) => Math.abs(p - x) < OBSTACLE_DIAMETER)) {
+      return x;
+    }
+    for (const p of positions) {
+      if (Math.abs(p - x) >= OBSTACLE_DIAMETER) continue;
+      for (const candidate of [p - OBSTACLE_DIAMETER, p + OBSTACLE_DIAMETER]) {
+        const shifted = Phaser.Math.Clamp(candidate, OBSTACLE_MIN_X, OBSTACLE_MAX_X);
+        if (!positions.some((q) => Math.abs(q - shifted) < OBSTACLE_DIAMETER)) {
+          return shifted;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Свободные сегменты ряда: от краёв ряда и между препятствиями. */
+  private getFreeSegments(positions: number[]): number[] {
+    const segments: number[] = [];
+    let prevEdge = OBSTACLE_MIN_X;
+    for (const p of [...positions].sort((a, b) => a - b)) {
+      segments.push(p - OBSTACLE_SIZE - prevEdge);
+      prevEdge = p + OBSTACLE_SIZE;
+    }
+    segments.push(OBSTACLE_MAX_X - prevEdge);
+    return segments;
+  }
+
+  private hasFreeGap(positions: number[]): boolean {
+    return Math.max(...this.getFreeSegments(positions)) >= MIN_ROW_FREE_WIDTH;
+  }
+
+  /**
+   * Гарантирует непрерывный пустой отрезок шириной MIN_ROW_FREE_WIDTH:
+   * смещает препятствие у самого широкого сегмента, при неудаче перевыбирает позицию.
+   */
+  private ensureFreeGap(positions: number[]): void {
+    if (positions.length === 0) return;
+    let attempts = 0;
+    while (!this.hasFreeGap(positions) && attempts < MAX_PLACEMENT_ATTEMPTS) {
+      attempts += 1;
+      const segments = this.getFreeSegments(positions);
+      let widest = 0;
+      for (let i = 1; i < segments.length; i += 1) {
+        if (segments[i] > segments[widest]) widest = i;
+      }
+      const missing = MIN_ROW_FREE_WIDTH - segments[widest];
+      const isRightmost = widest === segments.length - 1;
+      const sorted = [...positions].sort((a, b) => a - b);
+      // Препятствие, ограничивающее самый широкий сегмент.
+      const offender = isRightmost ? sorted[sorted.length - 1] : sorted[widest];
+      const direction = isRightmost ? -1 : 1;
+      const index = positions.indexOf(offender);
+      const others = positions.filter((_, i) => i !== index);
+      const shifted = this.resolveOverlap(
+        Phaser.Math.Clamp(offender + direction * missing, OBSTACLE_MIN_X, OBSTACLE_MAX_X),
+        others,
+      );
+      if (shifted !== null) {
+        positions[index] = shifted;
+        continue;
+      }
+      const rerolled = this.resolveOverlap(
+        Phaser.Math.Between(OBSTACLE_MIN_X, OBSTACLE_MAX_X),
+        others,
+      );
+      if (rerolled !== null) {
+        positions[index] = rerolled;
+      }
+    }
+    if (!this.hasFreeGap(positions)) {
+      console.warn('randomRowPositions: не удалось гарантировать проход шириной с дракона.');
+    }
   }
 
   private onPhaseChange(): void {
@@ -494,13 +688,22 @@ export class GameScene extends Phaser.Scene {
 
   }
 
+  /**
+   * Две плитки фона в стек: нижняя — как есть, верхняя — отражённая по вертикали.
+   * Зеркальная плитка стыкуется с обычной «цвет в цвет», поэтому шва не видно.
+   */
   private createBackground(): void {
-    this.background = this.add.group();
-    for (let i = 0; i < 10; i++) {
-      const x = Phaser.Math.Between(0, this.scale.width);
-      const y = Phaser.Math.Between(0, this.scale.height);
-      const size = Phaser.Math.Between(6, 16);
-      this.background.add(this.add.circle(x, y, size, 0xbfdbfe, 0.25));
+    const { width } = this.scale;
+    const source = this.textures.get('background').getSourceImage();
+    const sourceHeight = source instanceof HTMLImageElement ? source.naturalHeight : source.height;
+    this.backgroundTiles = [];
+    for (let i = 0; i < BACKGROUND_TILES; i++) {
+      this.backgroundTiles.push(
+        this.add
+          .image(width / 2, sourceHeight / 2 - i * sourceHeight, 'background')
+          .setFlipY(i % 2 === 1)
+          .setDepth(-1),
+      );
     }
   }
 
