@@ -10,10 +10,13 @@ export class Player {
   readonly image: Phaser.GameObjects.Image;
 
   private readonly cursors: Phaser.Types.Input.Keyboard.CursorKeys;
+  private readonly wasd: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
 
-  constructor(scene: Phaser.Scene, cursors: Phaser.Types.Input.Keyboard.CursorKeys) {
+  constructor(scene: Phaser.Scene, wasd: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>,
+    cursors: Phaser.Types.Input.Keyboard.CursorKeys) {
     // Столкновение считается по «кресту»: центральная вертикаль + горизонтальная полоса.
     this.image = scene.add.image(START_X, START_Y, 'dragon').setScale(PLAYER_SCALE);
+    this.wasd = wasd;
     this.cursors = cursors;
   }
 
@@ -25,10 +28,10 @@ export class Player {
   update(seconds: number): void {
     let dx = 0;
     let dy = 0;
-    if (this.cursors.left.isDown) dx -= 1;
-    if (this.cursors.right.isDown) dx += 1;
-    if (this.cursors.up.isDown) dy -= 1;
-    if (this.cursors.down.isDown) dy += 1;
+    if (this.wasd.A.isDown || this.cursors.left.isDown) dx -= 1;
+    if (this.wasd.D.isDown || this.cursors.right.isDown) dx += 1;
+    if (this.wasd.W.isDown || this.cursors.up.isDown) dy -= 1;
+    if (this.wasd.S.isDown || this.cursors.down.isDown) dy += 1;
 
     if (dx !== 0 || dy !== 0) {
       const length = Math.hypot(dx, dy);

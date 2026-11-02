@@ -13,11 +13,6 @@ import { COINS_PER_LEVEL, FINISH_Y } from './constants';
 /**
  * Игра «Драконьи погони».
  *
- * Дракон летит вверх, мир (фон и препятствия) движется навстречу. Игрок
- * стрелками уворачивается от грозовых туч и вихрей. Раунд длится 20 секунд,
- * после чего сверху появляется финиш. За прохождение уровня начисляются
- * золотые монеты викингов. Сообщения об успехе и провале выводятся на щите.
- *
  * Сцена только координирует подсистемы: BackgroundLayer рисует игровое поле,
  * ObstacleField управляет препятствиями, Round хранит состояние раунда,
  * Player двигает дракона, Hud показывает индикаторы, Phase — правила фаз.
@@ -30,6 +25,7 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private hud!: Hud;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private finishBand!: Phaser.GameObjects.Rectangle;
   private shieldImage!: Phaser.GameObjects.Image;
   private messageText!: Phaser.GameObjects.Text;
@@ -58,7 +54,7 @@ export class GameScene extends Phaser.Scene {
     this.round = new Round();
     this.gamePhase = new Phase();
     this.registerKeys();
-    this.player = new Player(this, this.cursors);
+    this.player = new Player(this, this.wasd, this.cursors);
     this.createFinishBand();
     this.hud = new Hud(this);
     this.createMessageShield();
@@ -275,6 +271,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = this.input.keyboard.addKeys('W,A,S,D') as Record<
+      'W' | 'A' | 'S' | 'D',
+      Phaser.Input.Keyboard.Key
+    >;
     this.input.keyboard.on('keydown-ENTER', () => {
       if (!this.round.isFinished) return;
       if (this.continueButton.visible) {
