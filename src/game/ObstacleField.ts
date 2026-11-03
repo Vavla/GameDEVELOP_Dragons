@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import {
   BASE_OBSTACLES,
+  BLACK_HOLE_ROTATION_SPEED,
   MAX_OBSTACLES_PER_ROW,
   MAX_PLACEMENT_ATTEMPTS,
   MAX_ROW_OCCUPANCY,
@@ -21,9 +22,9 @@ import {
   SCROLL_SPEED,
 } from './constants';
 
-export type ObstacleType = 'cloud' | 'whirlwind';
+export type ObstacleType = 'cloud' | 'blackhole';
 
-const OBSTACLE_TYPES: ObstacleType[] = ['cloud', 'whirlwind'];
+const OBSTACLE_TYPES: ObstacleType[] = ['cloud', 'blackhole'];
 
 /** Задание на генерацию одного ряда препятствий. */
 interface RowSpec {
@@ -83,10 +84,13 @@ export class ObstacleField {
     });
   }
 
-  /** Удаляет препятствия, улетевшие за нижний край экрана. */
-  update(): void {
+  /** Удаляет препятствия, улетевшие за нижний край экрана; вращает чёрные дыры. */
+  update(seconds: number): void {
     this.group.getChildren().forEach((child) => {
       const obstacle = child as Phaser.Physics.Arcade.Image;
+      if (obstacle.texture.key === 'blackhole') {
+        obstacle.rotation += BLACK_HOLE_ROTATION_SPEED * seconds;
+      }
       if (obstacle.y > this.scene.scale.height + OBSTACLE_SIZE) {
         obstacle.destroy();
       }
@@ -310,13 +314,22 @@ export class ObstacleField {
     cloud.generateTexture('cloud', size, size);
     cloud.destroy();
 
-    // Вихрь — концентрические окружности.
-    const whirlwind = this.scene.add.graphics();
-    whirlwind.lineStyle(4, 0x93c5fd, 1);
-    whirlwind.strokeCircle(c, c, OBSTACLE_SIZE * 0.4);
-    whirlwind.strokeCircle(c, c, OBSTACLE_SIZE * 0.7);
-    whirlwind.strokeCircle(c, c, OBSTACLE_SIZE);
-    whirlwind.generateTexture('whirlwind', size, size);
-    whirlwind.destroy();
+    // Чёрная дыра — тёмное ядро с фиолетовым свечением и дугами аккреции
+    // (дуги несимметричны, чтобы вращение было заметно).
+    const blackHole = this.scene.add.graphics();
+    blackHole.fillStyle(0x7c3aed, 0.45);
+    blackHole.fillCircle(c, c, OBSTACLE_SIZE);
+    blackHole.fillStyle(0x0a0a12, 1);
+    blackHole.fillCircle(c, c, OBSTACLE_SIZE * 0.7);
+    blackHole.lineStyle(5, 0xa78bfa, 1);
+    blackHole.beginPath();
+    blackHole.arc(c, c, OBSTACLE_SIZE * 0.85, 0, Phaser.Math.DegToRad(140), false);
+    blackHole.strokePath();
+    blackHole.lineStyle(3, 0x93c5fd, 0.9);
+    blackHole.beginPath();
+    blackHole.arc(c, c, OBSTACLE_SIZE * 0.95, Phaser.Math.DegToRad(200), Phaser.Math.DegToRad(300), false);
+    blackHole.strokePath();
+    blackHole.generateTexture('blackhole', size, size);
+    blackHole.destroy();
   }
 }
