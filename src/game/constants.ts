@@ -1,5 +1,5 @@
 /** Скорость движения дракона (пикселей в секунду). */
-export const PLAYER_SPEED = 280;
+export const PLAYER_SPEED = 310;
 
 /** Масштаб картинки дракона (исходник 88×88). */
 export const PLAYER_SCALE = 0.5;
@@ -129,6 +129,12 @@ export const PHASE_2_COINS = 10;
 
 /** Множитель скорости и количества препятствий во второй фазе. */
 export const PHASE_2_MULTIPLIER = 1.2;
+
+/** Скорость вращения чёрной дыры (радиан в секунду). */
+export const BLACK_HOLE_ROTATION_SPEED = 2.5;
+
+/** Длительность микро-паузы после удара (мс). */
+export const HIT_FREEZE_MS = 500;
 
 /** Максимальное количество препятствий в одном ряду. */
 export const MAX_OBSTACLES_PER_ROW = 3;

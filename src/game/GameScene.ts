@@ -8,15 +8,10 @@ import { ObstacleField } from './ObstacleField';
 import { Phase } from './Phase';
 import { Player } from './Player';
 import { Round } from './Round';
-import { COINS_PER_LEVEL, FINISH_Y } from './constants';
+import { COINS_PER_LEVEL, FINISH_Y, HIT_FREEZE_MS } from './constants';
 
 /**
  * Игра «Драконьи погони».
- *
- * Дракон летит вверх, мир (фон и препятствия) движется навстречу. Игрок
- * стрелками уворачивается от грозовых туч и вихрей. Раунд длится 20 секунд,
- * после чего сверху появляется финиш. За прохождение уровня начисляются
- * золотые монеты викингов. Сообщения об успехе и провале выводятся на щите.
  *
  * Сцена только координирует подсистемы: BackgroundLayer рисует игровое поле,
  * ObstacleField управляет препятствиями, Round хранит состояние раунда,
@@ -30,6 +25,7 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private hud!: Hud;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private finishBand!: Phaser.GameObjects.Rectangle;
   private shieldImage!: Phaser.GameObjects.Image;
   private messageText!: Phaser.GameObjects.Text;
@@ -37,8 +33,13 @@ export class GameScene extends Phaser.Scene {
   private continueButton!: Phaser.GameObjects.Text;
   private exitButton!: Phaser.GameObjects.Text;
   private pauseOverlay!: Phaser.GameObjects.Container;
+  private hitText!: Phaser.GameObjects.Text;
   private level = 1;
   private isPaused = false;
+  /** Микро-пауза после удара: мир на мгновение замирает. */
+  private isFrozen = false;
+  /** Ожидание нажатия Enter после потери последней жизни. */
+  private isWaitingRetry = false;
 
   constructor() {
     super('GameScene');
@@ -58,22 +59,23 @@ export class GameScene extends Phaser.Scene {
     this.round = new Round();
     this.gamePhase = new Phase();
     this.registerKeys();
-    this.player = new Player(this, this.cursors);
+    this.player = new Player(this, this.wasd, this.cursors);
     this.createFinishBand();
     this.hud = new Hud(this);
     this.createMessageShield();
+    this.createHitText();
     this.createPauseOverlay();
 
     this.startLevel();
   }
 
   update(_time: number, delta: number): void {
-    if (this.isPaused || this.round.isFinished) return;
+    if (this.isPaused || this.isFrozen || this.round.isFinished) return;
 
     const seconds = delta / 1000;
     this.player.update(seconds);
     this.background.update(seconds, this.round.elapsed);
-    this.obstacles.update();
+    this.obstacles.update(seconds);
 
     const hit = this.obstacles.hitPlayer(this.player.image);
     if (hit) {
@@ -122,6 +124,7 @@ export class GameScene extends Phaser.Scene {
     this.gamePhase.reset();
     this.finishBand.setVisible(false);
     this.setPaused(false);
+    this.isWaitingRetry = false;
     this.hideOverlays();
 
     this.obstacles.reset();
@@ -151,10 +154,25 @@ export class GameScene extends Phaser.Scene {
     const lost = this.round.registerHit();
     this.hud.setLives(this.round.lives);
 
+    this.microPause();
     if (lost) {
-      this.physics.world.pause();
+      this.isWaitingRetry = true;
       this.showMessage('Попробовать снова?', 'Нажми Enter');
     }
+  }
+
+  /** Микро-пауза после удара: мир замирает, крупно показывается «УДАР». */
+  private microPause(): void {
+    this.isFrozen = true;
+    this.physics.world.pause();
+    this.hitText.setVisible(true);
+    this.time.delayedCall(HIT_FREEZE_MS, () => {
+      this.isFrozen = false;
+      this.hitText.setVisible(false);
+      if (!this.isPaused && !this.isWaitingRetry && !this.round.isFinished) {
+        this.physics.world.resume();
+      }
+    });
   }
 
   private onFinish(): void {
@@ -219,6 +237,21 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Крупная красная надпись «УДАР» на время микро-паузы. */
+  private createHitText(): void {
+    const { width, height } = this.scale;
+    this.hitText = this.add
+      .text(width / 2, height / 2, 'УДАР', {
+        fontFamily: 'Georgia, serif',
+        fontSize: '96px',
+        fontStyle: 'bold',
+        color: '#ff0000',
+      })
+      .setOrigin(0.5)
+      .setDepth(9)
+      .setVisible(false);
+  }
+
   private createPauseOverlay(): void {
     const { width, height } = this.scale;
 
@@ -275,6 +308,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = this.input.keyboard.addKeys('W,A,S,D') as Record<
+      'W' | 'A' | 'S' | 'D',
+      Phaser.Input.Keyboard.Key
+    >;
     this.input.keyboard.on('keydown-ENTER', () => {
       if (!this.round.isFinished) return;
       if (this.continueButton.visible) {
